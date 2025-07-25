@@ -14,18 +14,25 @@
     {
       "name": "index",
       "title": "Show Recent Files",
-      "subtitle": "List recent files from target directory",
-      "description": "Shows the 20 most recently created files from a specified directory",
+      "subtitle": "List recent files from target directories",
+      "description": "Shows the most recently created files from specified directories",
       "mode": "view"
+    },
+    {
+      "name": "preferences",
+      "title": "Open Extension Preferences",
+      "subtitle": "Configure target directories",
+      "description": "Open preferences to configure which directories to scan",
+      "mode": "no-view"
     }
   ],
   "preferences": [
     {
-      "name": "targetDirectory",
-      "title": "Target Directory",
-      "description": "The directory to scan for recent files",
+      "name": "targetDirectories",
+      "title": "Target Directories",
+      "description": "Comma-separated list of directories to scan for recent files (e.g., ~/Downloads, ~/Desktop, ~/Documents)",
       "type": "textfield",
-      "default": "~/Downloads",
+      "default": "~/Downloads, ~/Desktop",
       "required": true
     }
   ],

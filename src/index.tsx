@@ -15,9 +15,10 @@ import path from "path";
 import { homedir } from "os";
 import { exec } from "child_process";
 import { promisify } from "util";
+import { useState } from "react";
 
 interface Preferences {
-  targetDirectory: string;
+  targetDirectories: string;
 }
 
 interface FileInfo {
@@ -26,61 +27,62 @@ interface FileInfo {
   createdAt: Date;
   size: number;
   isDirectory: boolean;
+  parentDirectory: string;
 }
 
 const execAsync = promisify(exec);
 
 function isImageFile(filePath: string): boolean {
   const ext = path.extname(filePath).toLowerCase();
-  return ['.png', '.jpg', '.jpeg', '.gif', '.svg', '.webp', '.bmp', '.ico', '.tiff'].includes(ext);
+  return [
+    ".png",
+    ".jpg",
+    ".jpeg",
+    ".gif",
+    ".svg",
+    ".webp",
+    ".bmp",
+    ".ico",
+    ".tiff",
+  ].includes(ext);
 }
 
-function getFileIcon(filePath: string): string {
+function getFileExtension(filePath: string): string {
   const ext = path.extname(filePath).toLowerCase();
-  const iconMap: { [key: string]: string } = {
-    ".png": "🖼️",
-    ".jpg": "🖼️",
-    ".jpeg": "🖼️",
-    ".gif": "🖼️",
-    ".svg": "🖼️",
-    ".webp": "🖼️",
-    ".bmp": "🖼️",
-    ".ico": "🖼️",
-    ".tiff": "🖼️",
-    ".pdf": "📄",
-    ".doc": "📝",
-    ".docx": "📝",
-    ".txt": "📝",
-    ".md": "📝",
-    ".js": "💻",
-    ".ts": "💻",
-    ".jsx": "💻",
-    ".tsx": "💻",
-    ".json": "💻",
-    ".html": "🌐",
-    ".css": "🎨",
-    ".mp4": "🎬",
-    ".mov": "🎬",
-    ".avi": "🎬",
-    ".mp3": "🎵",
-    ".wav": "🎵",
-    ".zip": "📦",
-    ".tar": "📦",
-    ".gz": "📦",
-  };
-  return iconMap[ext] || "📄";
+  return ext || "";
 }
 
-async function getRecentFiles(directory: string): Promise<FileInfo[]> {
+async function getRecentFiles(directories: string[]): Promise<FileInfo[]> {
+  const allFileInfos: FileInfo[] = [];
+
+  for (const directory of directories) {
+    try {
+      const fileInfos = await getFilesFromDirectory(directory);
+      allFileInfos.push(...fileInfos);
+    } catch (error: any) {
+      console.error(`Error reading directory ${directory}:`, error.message);
+      // Continue with other directories even if one fails
+    }
+  }
+
+  // Sort all files by creation date
+  allFileInfos.sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
+
+  return allFileInfos;
+}
+
+async function getFilesFromDirectory(directory: string): Promise<FileInfo[]> {
   try {
     // ディレクトリが存在するか確認
     try {
       await fs.access(directory, fs.constants.R_OK);
     } catch (error: any) {
-      if (error.code === 'ENOENT') {
+      if (error.code === "ENOENT") {
         throw new Error(`Directory does not exist: ${directory}`);
-      } else if (error.code === 'EACCES' || error.code === 'EPERM') {
-        throw new Error(`Permission denied: Cannot access ${directory}. Please grant Full Disk Access to Raycast in System Preferences > Security & Privacy > Privacy > Full Disk Access.`);
+      } else if (error.code === "EACCES" || error.code === "EPERM") {
+        throw new Error(
+          `Permission denied: Cannot access ${directory}. Please grant Full Disk Access to Raycast in System Preferences > Security & Privacy > Privacy > Full Disk Access.`
+        );
       }
       throw new Error(`Cannot access directory: ${directory}`);
     }
@@ -90,8 +92,8 @@ async function getRecentFiles(directory: string): Promise<FileInfo[]> {
 
     for (const file of files) {
       // 隠しファイルをスキップ
-      if (file.startsWith('.')) continue;
-      
+      if (file.startsWith(".")) continue;
+
       const filePath = path.join(directory, file);
       try {
         const stats = await fs.stat(filePath);
@@ -101,6 +103,7 @@ async function getRecentFiles(directory: string): Promise<FileInfo[]> {
           createdAt: stats.birthtime,
           size: stats.size,
           isDirectory: stats.isDirectory(),
+          parentDirectory: directory,
         });
       } catch (error) {
         // ファイルへのアクセスができない場合はスキップ
@@ -108,14 +111,12 @@ async function getRecentFiles(directory: string): Promise<FileInfo[]> {
       }
     }
 
-    // 作成日時でソート（新しい順）
-    fileInfos.sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
-
-    // 上位20件を返す
-    return fileInfos.slice(0, 20);
+    return fileInfos;
   } catch (error: any) {
-    if (error.code === 'EACCES' || error.code === 'EPERM') {
-      throw new Error(`Permission denied: Cannot access ${directory}. Please check the directory permissions or choose a different directory in preferences.`);
+    if (error.code === "EACCES" || error.code === "EPERM") {
+      throw new Error(
+        `Permission denied: Cannot access ${directory}. Please check the directory permissions or choose a different directory in preferences.`
+      );
     }
     throw new Error(`Failed to read directory: ${error.message || error}`);
   }
@@ -150,16 +151,30 @@ function formatDate(date: Date): string {
   }
 }
 
+const ITEMS_PER_PAGE = 20;
 
 export default function Command() {
   const preferences = getPreferenceValues<Preferences>();
-  const targetDirectory = preferences.targetDirectory.replace("~", homedir());
+  const directoriesString = preferences.targetDirectories || "~/Downloads";
+  const directories = directoriesString
+    .split(",")
+    .map((dir) => dir.trim())
+    .filter((dir) => dir.length > 0)
+    .map((dir) => dir.replace("~", homedir()));
+
+  const [page, setPage] = useState(0);
 
   const {
-    data: files,
+    data: allFiles,
     isLoading,
     error,
-  } = usePromise(async () => await getRecentFiles(targetDirectory), []);
+  } = usePromise(async () => await getRecentFiles(directories), []);
+
+  const totalPages = allFiles ? Math.ceil(allFiles.length / ITEMS_PER_PAGE) : 0;
+  const files = allFiles?.slice(
+    page * ITEMS_PER_PAGE,
+    (page + 1) * ITEMS_PER_PAGE
+  );
 
   if (error) {
     showToast({
@@ -170,8 +185,8 @@ export default function Command() {
   }
 
   return (
-    <List 
-      isLoading={isLoading} 
+    <List
+      isLoading={isLoading}
       searchBarPlaceholder="Search recent files..."
       isShowingDetail={true}
     >
@@ -199,49 +214,102 @@ export default function Command() {
       {!error && files?.length === 0 && (
         <List.EmptyView
           title="No files found"
-          description={`No recent files found in ${targetDirectory}`}
+          description={`No recent files found in the specified directories`}
           icon={Icon.Document}
         />
       )}
-      {!error && files?.map((file) => (
-        <List.Item
-          key={file.path}
-          icon={file.isDirectory ? Icon.Folder : getFileIcon(file.path)}
-          title={file.name}
-          subtitle={file.isDirectory ? "Folder" : ""}
-          accessories={[{ text: formatDate(file.createdAt) }]}
-          detail={
-            isImageFile(file.path) && !file.isDirectory ? (
+      {!error &&
+        files?.map((file) => (
+          <List.Item
+            key={file.path}
+            title={`${file.isDirectory ? "[📁]" : `[${getFileExtension(file.path)}]`} ${file.name}`}
+            detail={
               <List.Item.Detail
-                markdown={`<img src="file://${encodeURI(file.path)}" alt="${file.name}" style="display: block; margin: 0 auto; max-width: 100%; max-height: 100%;" />`}
+                markdown={
+                  isImageFile(file.path) && !file.isDirectory
+                    ? `![](file://${encodeURI(file.path)})`
+                    : ""
+                }
+                metadata={
+                  <List.Item.Detail.Metadata>
+                    <List.Item.Detail.Metadata.Label
+                      title="Name"
+                      text={file.name}
+                    />
+                    <List.Item.Detail.Metadata.Label
+                      title="Location"
+                      text={file.parentDirectory}
+                    />
+                    <List.Item.Detail.Metadata.Label
+                      title="Size"
+                      text={formatFileSize(file.size)}
+                    />
+                    <List.Item.Detail.Metadata.Label
+                      title="Created"
+                      text={formatDate(file.createdAt)}
+                    />
+                  </List.Item.Detail.Metadata>
+                }
               />
-            ) : undefined
-          }
-          actions={
-            <ActionPanel>
-              <Action.CopyToClipboard
-                title="Copy Path to Clipboard"
-                content={file.path}
-              />
-              <Action.Open
-                title="Open File"
-                target={file.path}
-                shortcut={{ modifiers: ["cmd"], key: "return" }}
-              />
-              <Action.ShowInFinder
-                title="Show in Finder"
-                path={file.path}
-                shortcut={{ modifiers: ["cmd", "shift"], key: "f" }}
-              />
-              <Action.CopyToClipboard
-                title="Copy File Name"
-                content={file.name}
-                shortcut={{ modifiers: ["cmd", "shift"], key: "c" }}
-              />
-            </ActionPanel>
-          }
-        />
-      ))}
+            }
+            actions={
+              <ActionPanel>
+                <Action.CopyToClipboard
+                  title="Copy Path to Clipboard"
+                  content={file.path}
+                />
+                <Action.Open
+                  title="Open File"
+                  target={file.path}
+                  shortcut={{ modifiers: ["cmd"], key: "return" }}
+                />
+                <Action.ShowInFinder
+                  title="Show in Finder"
+                  path={file.path}
+                  shortcut={{ modifiers: ["cmd", "shift"], key: "f" }}
+                />
+                <Action.CopyToClipboard
+                  title="Copy File Name"
+                  content={file.name}
+                  shortcut={{ modifiers: ["cmd", "shift"], key: "c" }}
+                />
+                <Action
+                  title="Open Extension Preferences"
+                  onAction={openExtensionPreferences}
+                  icon={Icon.Gear}
+                  shortcut={{ modifiers: ["cmd"], key: "," }}
+                />
+              </ActionPanel>
+            }
+          />
+        ))}
+      {totalPages > 1 && !isLoading && !error && (
+        <List.Section title={`Page ${page + 1} of ${totalPages}`}>
+          <List.Item
+            title="Load More"
+            subtitle={`Showing ${files?.length || 0} of ${allFiles?.length || 0} files`}
+            icon={Icon.ArrowDown}
+            actions={
+              <ActionPanel>
+                {page < totalPages - 1 && (
+                  <Action
+                    title="Next Page"
+                    onAction={() => setPage(page + 1)}
+                    icon={Icon.ArrowRight}
+                  />
+                )}
+                {page > 0 && (
+                  <Action
+                    title="Previous Page"
+                    onAction={() => setPage(page - 1)}
+                    icon={Icon.ArrowLeft}
+                  />
+                )}
+              </ActionPanel>
+            }
+          />
+        </List.Section>
+      )}
     </List>
   );
 }
