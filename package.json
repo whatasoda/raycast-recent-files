@@ -25,7 +25,7 @@
       "title": "Target Directory",
       "description": "The directory to scan for recent files",
       "type": "textfield",
-      "default": "~/Desktop",
+      "default": "~/Downloads",
       "required": true
     }
   ],

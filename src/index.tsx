@@ -6,6 +6,8 @@ import {
   Toast,
   getPreferenceValues,
   Icon,
+  openExtensionPreferences,
+  Detail,
 } from "@raycast/api";
 import { usePromise } from "@raycast/utils";
 import { promises as fs } from "fs";
@@ -28,7 +30,12 @@ interface FileInfo {
 
 const execAsync = promisify(exec);
 
-async function getFileIcon(filePath: string): Promise<string> {
+function isImageFile(filePath: string): boolean {
+  const ext = path.extname(filePath).toLowerCase();
+  return ['.png', '.jpg', '.jpeg', '.gif', '.svg', '.webp', '.bmp', '.ico', '.tiff'].includes(ext);
+}
+
+function getFileIcon(filePath: string): string {
   const ext = path.extname(filePath).toLowerCase();
   const iconMap: { [key: string]: string } = {
     ".png": "🖼️",
@@ -36,6 +43,10 @@ async function getFileIcon(filePath: string): Promise<string> {
     ".jpeg": "🖼️",
     ".gif": "🖼️",
     ".svg": "🖼️",
+    ".webp": "🖼️",
+    ".bmp": "🖼️",
+    ".ico": "🖼️",
+    ".tiff": "🖼️",
     ".pdf": "📄",
     ".doc": "📝",
     ".docx": "📝",
@@ -62,10 +73,25 @@ async function getFileIcon(filePath: string): Promise<string> {
 
 async function getRecentFiles(directory: string): Promise<FileInfo[]> {
   try {
+    // ディレクトリが存在するか確認
+    try {
+      await fs.access(directory, fs.constants.R_OK);
+    } catch (error: any) {
+      if (error.code === 'ENOENT') {
+        throw new Error(`Directory does not exist: ${directory}`);
+      } else if (error.code === 'EACCES' || error.code === 'EPERM') {
+        throw new Error(`Permission denied: Cannot access ${directory}. Please grant Full Disk Access to Raycast in System Preferences > Security & Privacy > Privacy > Full Disk Access.`);
+      }
+      throw new Error(`Cannot access directory: ${directory}`);
+    }
+
     const files = await fs.readdir(directory);
     const fileInfos: FileInfo[] = [];
 
     for (const file of files) {
+      // 隠しファイルをスキップ
+      if (file.startsWith('.')) continue;
+      
       const filePath = path.join(directory, file);
       try {
         const stats = await fs.stat(filePath);
@@ -87,8 +113,11 @@ async function getRecentFiles(directory: string): Promise<FileInfo[]> {
 
     // 上位20件を返す
     return fileInfos.slice(0, 20);
-  } catch (error) {
-    throw new Error(`Failed to read directory: ${error}`);
+  } catch (error: any) {
+    if (error.code === 'EACCES' || error.code === 'EPERM') {
+      throw new Error(`Permission denied: Cannot access ${directory}. Please check the directory permissions or choose a different directory in preferences.`);
+    }
+    throw new Error(`Failed to read directory: ${error.message || error}`);
   }
 }
 
@@ -121,6 +150,7 @@ function formatDate(date: Date): string {
   }
 }
 
+
 export default function Command() {
   const preferences = getPreferenceValues<Preferences>();
   const targetDirectory = preferences.targetDirectory.replace("~", homedir());
@@ -140,25 +170,63 @@ export default function Command() {
   }
 
   return (
-    <List isLoading={isLoading} searchBarPlaceholder="Search recent files...">
-      {files?.map((file) => (
+    <List 
+      isLoading={isLoading} 
+      searchBarPlaceholder="Search recent files..."
+      isShowingDetail={true}
+    >
+      {error && (
+        <List.EmptyView
+          title="Cannot access directory"
+          description={error.message}
+          icon={Icon.ExclamationMark}
+          actions={
+            <ActionPanel>
+              <Action
+                title="Open Extension Preferences"
+                onAction={openExtensionPreferences}
+                icon={Icon.Gear}
+              />
+              <Action.OpenInBrowser
+                title="How to Grant Full Disk Access"
+                url="https://support.apple.com/guide/mac-help/control-access-to-files-and-folders-on-mac-mchld5a35146/mac"
+                icon={Icon.QuestionMark}
+              />
+            </ActionPanel>
+          }
+        />
+      )}
+      {!error && files?.length === 0 && (
+        <List.EmptyView
+          title="No files found"
+          description={`No recent files found in ${targetDirectory}`}
+          icon={Icon.Document}
+        />
+      )}
+      {!error && files?.map((file) => (
         <List.Item
           key={file.path}
-          // icon={file.isDirectory ? Icon.Folder : getFileIcon(file.path)}
+          icon={file.isDirectory ? Icon.Folder : getFileIcon(file.path)}
           title={file.name}
-          subtitle={file.isDirectory ? "Folder" : formatFileSize(file.size)}
+          subtitle={file.isDirectory ? "Folder" : ""}
           accessories={[{ text: formatDate(file.createdAt) }]}
+          detail={
+            isImageFile(file.path) && !file.isDirectory ? (
+              <List.Item.Detail
+                markdown={`<img src="file://${encodeURI(file.path)}" alt="${file.name}" style="display: block; margin: 0 auto; max-width: 100%; max-height: 100%;" />`}
+              />
+            ) : undefined
+          }
           actions={
             <ActionPanel>
               <Action.CopyToClipboard
                 title="Copy Path to Clipboard"
                 content={file.path}
-                shortcut={{ modifiers: ["cmd"], key: "c" }}
               />
               <Action.Open
                 title="Open File"
                 target={file.path}
-                shortcut={{ modifiers: ["cmd"], key: "o" }}
+                shortcut={{ modifiers: ["cmd"], key: "return" }}
               />
               <Action.ShowInFinder
                 title="Show in Finder"
