@@ -47,10 +47,6 @@ function isImageFile(filePath: string): boolean {
   ].includes(ext);
 }
 
-function getFileExtension(filePath: string): string {
-  const ext = path.extname(filePath).toLowerCase();
-  return ext || "";
-}
 
 async function getRecentFiles(directories: string[]): Promise<FileInfo[]> {
   const allFileInfos: FileInfo[] = [];
@@ -151,7 +147,8 @@ function formatDate(date: Date): string {
   }
 }
 
-const ITEMS_PER_PAGE = 20;
+const INITIAL_LOAD = 30;
+const LOAD_INCREMENT = 20;
 
 export default function Command() {
   const preferences = getPreferenceValues<Preferences>();
@@ -162,7 +159,7 @@ export default function Command() {
     .filter((dir) => dir.length > 0)
     .map((dir) => dir.replace("~", homedir()));
 
-  const [page, setPage] = useState(0);
+  const [displayCount, setDisplayCount] = useState(INITIAL_LOAD);
 
   const {
     data: allFiles,
@@ -170,11 +167,8 @@ export default function Command() {
     error,
   } = usePromise(async () => await getRecentFiles(directories), []);
 
-  const totalPages = allFiles ? Math.ceil(allFiles.length / ITEMS_PER_PAGE) : 0;
-  const files = allFiles?.slice(
-    page * ITEMS_PER_PAGE,
-    (page + 1) * ITEMS_PER_PAGE
-  );
+  const files = allFiles?.slice(0, displayCount);
+  const hasMore = allFiles && allFiles.length > displayCount;
 
   if (error) {
     showToast({
@@ -222,7 +216,7 @@ export default function Command() {
         files?.map((file) => (
           <List.Item
             key={file.path}
-            title={`${file.isDirectory ? "[📁]" : `[${getFileExtension(file.path)}]`} ${file.name}`}
+            title={file.name}
             detail={
               <List.Item.Detail
                 markdown={
@@ -283,32 +277,27 @@ export default function Command() {
             }
           />
         ))}
-      {totalPages > 1 && !isLoading && !error && (
-        <List.Section title={`Page ${page + 1} of ${totalPages}`}>
-          <List.Item
-            title="Load More"
-            subtitle={`Showing ${files?.length || 0} of ${allFiles?.length || 0} files`}
-            icon={Icon.ArrowDown}
-            actions={
-              <ActionPanel>
-                {page < totalPages - 1 && (
-                  <Action
-                    title="Next Page"
-                    onAction={() => setPage(page + 1)}
-                    icon={Icon.ArrowRight}
-                  />
-                )}
-                {page > 0 && (
-                  <Action
-                    title="Previous Page"
-                    onAction={() => setPage(page - 1)}
-                    icon={Icon.ArrowLeft}
-                  />
-                )}
-              </ActionPanel>
-            }
-          />
-        </List.Section>
+      {hasMore && !isLoading && !error && (
+        <List.Item
+          title="Load More Files"
+          subtitle={`Showing ${files?.length || 0} of ${allFiles?.length || 0} files`}
+          icon={Icon.Download}
+          actions={
+            <ActionPanel>
+              <Action
+                title="Load More"
+                onAction={() => setDisplayCount(displayCount + LOAD_INCREMENT)}
+                icon={Icon.Download}
+              />
+              <Action
+                title="Load All Remaining"
+                onAction={() => setDisplayCount(allFiles?.length || displayCount)}
+                icon={Icon.List}
+                shortcut={{ modifiers: ["cmd"], key: "a" }}
+              />
+            </ActionPanel>
+          }
+        />
       )}
     </List>
   );
