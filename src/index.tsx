@@ -241,11 +241,7 @@ export default function Command() {
                   content={file.path}
                   shortcut={{ modifiers: ["cmd", "shift"], key: "c" }}
                 />
-                <Action
-                  title="Open Extension Preferences"
-                  onAction={openExtensionPreferences}
-                  icon={Icon.Gear}
-                />
+                <Action title="Open Extension Preferences" onAction={openExtensionPreferences} icon={Icon.Gear} />
               </ActionPanel>
             }
           />
