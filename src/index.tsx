@@ -7,14 +7,11 @@ import {
   getPreferenceValues,
   Icon,
   openExtensionPreferences,
-  Detail,
 } from "@raycast/api";
 import { usePromise } from "@raycast/utils";
 import { promises as fs } from "fs";
 import path from "path";
 import { homedir } from "os";
-import { exec } from "child_process";
-import { promisify } from "util";
 import { useState } from "react";
 
 interface Preferences {
@@ -30,23 +27,10 @@ interface FileInfo {
   parentDirectory: string;
 }
 
-const execAsync = promisify(exec);
-
 function isImageFile(filePath: string): boolean {
   const ext = path.extname(filePath).toLowerCase();
-  return [
-    ".png",
-    ".jpg",
-    ".jpeg",
-    ".gif",
-    ".svg",
-    ".webp",
-    ".bmp",
-    ".ico",
-    ".tiff",
-  ].includes(ext);
+  return [".png", ".jpg", ".jpeg", ".gif", ".svg", ".webp", ".bmp", ".ico", ".tiff"].includes(ext);
 }
-
 
 async function getRecentFiles(directories: string[]): Promise<FileInfo[]> {
   const allFileInfos: FileInfo[] = [];
@@ -55,8 +39,8 @@ async function getRecentFiles(directories: string[]): Promise<FileInfo[]> {
     try {
       const fileInfos = await getFilesFromDirectory(directory);
       allFileInfos.push(...fileInfos);
-    } catch (error: any) {
-      console.error(`Error reading directory ${directory}:`, error.message);
+    } catch (error) {
+      console.error(`Error reading directory ${directory}:`, (error as Error).message);
       // Continue with other directories even if one fails
     }
   }
@@ -72,10 +56,13 @@ async function getFilesFromDirectory(directory: string): Promise<FileInfo[]> {
     // ディレクトリが存在するか確認
     try {
       await fs.access(directory, fs.constants.R_OK);
-    } catch (error: any) {
-      if (error.code === "ENOENT") {
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "ENOENT") {
         throw new Error(`Directory does not exist: ${directory}`);
-      } else if (error.code === "EACCES" || error.code === "EPERM") {
+      } else if (
+        (error as NodeJS.ErrnoException).code === "EACCES" ||
+        (error as NodeJS.ErrnoException).code === "EPERM"
+      ) {
         throw new Error(
           `Permission denied: Cannot access ${directory}. Please grant Full Disk Access to Raycast in System Preferences > Security & Privacy > Privacy > Full Disk Access.`
         );
@@ -108,21 +95,20 @@ async function getFilesFromDirectory(directory: string): Promise<FileInfo[]> {
     }
 
     return fileInfos;
-  } catch (error: any) {
-    if (error.code === "EACCES" || error.code === "EPERM") {
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "EACCES" || (error as NodeJS.ErrnoException).code === "EPERM") {
       throw new Error(
         `Permission denied: Cannot access ${directory}. Please check the directory permissions or choose a different directory in preferences.`
       );
     }
-    throw new Error(`Failed to read directory: ${error.message || error}`);
+    throw new Error(`Failed to read directory: ${(error as Error).message || error}`);
   }
 }
 
 function formatFileSize(bytes: number): string {
   if (bytes < 1024) return bytes + " B";
   if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + " KB";
-  if (bytes < 1024 * 1024 * 1024)
-    return (bytes / (1024 * 1024)).toFixed(1) + " MB";
+  if (bytes < 1024 * 1024 * 1024) return (bytes / (1024 * 1024)).toFixed(1) + " MB";
   return (bytes / (1024 * 1024 * 1024)).toFixed(1) + " GB";
 }
 
@@ -161,11 +147,7 @@ export default function Command() {
 
   const [displayCount, setDisplayCount] = useState(INITIAL_LOAD);
 
-  const {
-    data: allFiles,
-    isLoading,
-    error,
-  } = usePromise(async () => await getRecentFiles(directories), []);
+  const { data: allFiles, isLoading, error } = usePromise(async () => await getRecentFiles(directories), []);
 
   const files = allFiles?.slice(0, displayCount);
   const hasMore = allFiles && allFiles.length > displayCount;
@@ -179,11 +161,7 @@ export default function Command() {
   }
 
   return (
-    <List
-      isLoading={isLoading}
-      searchBarPlaceholder="Search recent files..."
-      isShowingDetail={true}
-    >
+    <List isLoading={isLoading} searchBarPlaceholder="Search recent files..." isShowingDetail={true}>
       {error && (
         <List.EmptyView
           title="Cannot access directory"
@@ -191,11 +169,7 @@ export default function Command() {
           icon={Icon.ExclamationMark}
           actions={
             <ActionPanel>
-              <Action
-                title="Open Extension Preferences"
-                onAction={openExtensionPreferences}
-                icon={Icon.Gear}
-              />
+              <Action title="Open Extension Preferences" onAction={openExtensionPreferences} icon={Icon.Gear} />
               <Action.OpenInBrowser
                 title="How to Grant Full Disk Access"
                 url="https://support.apple.com/guide/mac-help/control-access-to-files-and-folders-on-mac-mchld5a35146/mac"
@@ -219,44 +193,21 @@ export default function Command() {
             title={file.name}
             detail={
               <List.Item.Detail
-                markdown={
-                  isImageFile(file.path) && !file.isDirectory
-                    ? `![](file://${encodeURI(file.path)})`
-                    : ""
-                }
+                markdown={isImageFile(file.path) && !file.isDirectory ? `![](file://${encodeURI(file.path)})` : ""}
                 metadata={
                   <List.Item.Detail.Metadata>
-                    <List.Item.Detail.Metadata.Label
-                      title="Name"
-                      text={file.name}
-                    />
-                    <List.Item.Detail.Metadata.Label
-                      title="Location"
-                      text={file.parentDirectory}
-                    />
-                    <List.Item.Detail.Metadata.Label
-                      title="Size"
-                      text={formatFileSize(file.size)}
-                    />
-                    <List.Item.Detail.Metadata.Label
-                      title="Created"
-                      text={formatDate(file.createdAt)}
-                    />
+                    <List.Item.Detail.Metadata.Label title="Name" text={file.name} />
+                    <List.Item.Detail.Metadata.Label title="Location" text={file.parentDirectory} />
+                    <List.Item.Detail.Metadata.Label title="Size" text={formatFileSize(file.size)} />
+                    <List.Item.Detail.Metadata.Label title="Created" text={formatDate(file.createdAt)} />
                   </List.Item.Detail.Metadata>
                 }
               />
             }
             actions={
               <ActionPanel>
-                <Action.CopyToClipboard
-                  title="Copy Path to Clipboard"
-                  content={file.path}
-                />
-                <Action.Open
-                  title="Open File"
-                  target={file.path}
-                  shortcut={{ modifiers: ["cmd"], key: "return" }}
-                />
+                <Action.CopyToClipboard title="Copy Path to Clipboard" content={file.path} />
+                <Action.Open title="Open File" target={file.path} shortcut={{ modifiers: ["cmd"], key: "return" }} />
                 <Action.ShowInFinder
                   title="Show in Finder"
                   path={file.path}
